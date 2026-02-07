@@ -1,0 +1,411 @@
+// ============================================================================
+// FlowForge - Workflow Automation Platform
+// Prisma Schema
+// ============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PAUSED
+}
+
+enum ExecutionMode {
+  MANUAL
+  TRIGGER
+  SCHEDULE
+  WEBHOOK
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  DELETE
+}
+
+enum Environment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+// ============================================================================
+// Organization
+// ============================================================================
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                User[]
+  apiKeys              ApiKey[]
+  workflows            Workflow[]
+  credentials          Credential[]
+  auditLogs            AuditLog[]
+  environmentVariables EnvironmentVariable[]
+  plugins              Plugin[]
+
+  @@index([slug])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// User
+// ============================================================================
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  avatar         String?
+  role           UserRole  @default(MEMBER)
+  organizationId String    @db.Uuid
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKeys          ApiKey[]
+  workflows        Workflow[]        @relation("CreatedWorkflows")
+  workflowVersions WorkflowVersion[] @relation("CreatedVersions")
+  credentials      Credential[]
+  executions       Execution[]       @relation("TriggeredExecutions")
+  auditLogs        AuditLog[]
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// ApiKey
+// ============================================================================
+
+model ApiKey {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  keyHash        String    @unique
+  prefix         String
+  userId         String    @db.Uuid
+  organizationId String    @db.Uuid
+  permissions    Json      @default("[]")
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([keyHash])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// ============================================================================
+// Workflow
+// ============================================================================
+
+model Workflow {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  description    String?
+  organizationId String   @db.Uuid
+  createdById    String   @db.Uuid
+  isActive       Boolean  @default(true)
+  version        Int      @default(1)
+  tags           String[]
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User              @relation("CreatedWorkflows", fields: [createdById], references: [id], onDelete: Cascade)
+  versions     WorkflowVersion[]
+  executions   Execution[]
+  webhooks     Webhook[]
+
+  @@index([organizationId])
+  @@index([createdById])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// WorkflowVersion
+// ============================================================================
+
+model WorkflowVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  workflowId  String   @db.Uuid
+  version     Int
+  nodes       Json     @default("[]")
+  edges       Json     @default("[]")
+  variables   Json     @default("{}")
+  changelog   String?
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  workflow      Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  createdBy     User            @relation("CreatedVersions", fields: [createdById], references: [id], onDelete: Cascade)
+  workflowNodes WorkflowNode[]
+  workflowEdges WorkflowEdge[]
+  executions    Execution[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// WorkflowNode
+// ============================================================================
+
+model WorkflowNode {
+  id                String   @id @default(uuid()) @db.Uuid
+  workflowVersionId String   @db.Uuid
+  nodeType          String
+  nodeId            String
+  label             String
+  position          Json
+  config            Json     @default("{}")
+  inputs            Json     @default("[]")
+  outputs           Json     @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+
+  @@index([workflowVersionId])
+  @@index([nodeId])
+}
+
+// ============================================================================
+// WorkflowEdge
+// ============================================================================
+
+model WorkflowEdge {
+  id                String   @id @default(uuid()) @db.Uuid
+  workflowVersionId String   @db.Uuid
+  sourceNodeId      String
+  targetNodeId      String
+  sourceHandle      String?
+  targetHandle      String?
+  condition         Json?
+  createdAt         DateTime @default(now())
+
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+
+  @@index([workflowVersionId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+// ============================================================================
+// Execution
+// ============================================================================
+
+model Execution {
+  id                String          @id @default(uuid()) @db.Uuid
+  workflowId        String          @db.Uuid
+  workflowVersionId String          @db.Uuid
+  triggeredById     String?         @db.Uuid
+  status            ExecutionStatus @default(PENDING)
+  mode              ExecutionMode   @default(MANUAL)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  duration          Int?
+  error             Json?
+  context           Json            @default("{}")
+  retryOfId         String?         @db.Uuid
+  retryCount        Int             @default(0)
+  createdAt         DateTime        @default(now())
+
+  workflow        Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion  @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  triggeredBy     User?            @relation("TriggeredExecutions", fields: [triggeredById], references: [id], onDelete: SetNull)
+  retryOf         Execution?       @relation("ExecutionRetries", fields: [retryOfId], references: [id], onDelete: SetNull)
+  retries         Execution[]      @relation("ExecutionRetries")
+  nodeExecutions  NodeExecution[]
+
+  @@index([workflowId])
+  @@index([workflowVersionId])
+  @@index([status])
+  @@index([mode])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// NodeExecution
+// ============================================================================
+
+model NodeExecution {
+  id          String          @id @default(uuid()) @db.Uuid
+  executionId String          @db.Uuid
+  nodeId      String
+  status      ExecutionStatus @default(PENDING)
+  inputData   Json            @default("{}")
+  outputData  Json            @default("{}")
+  error       Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int?
+  retryCount  Int             @default(0)
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([nodeId])
+  @@index([status])
+}
+
+// ============================================================================
+// Credential
+// ============================================================================
+
+model Credential {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  type           String
+  organizationId String   @db.Uuid
+  createdById    String   @db.Uuid
+  encryptedData  String
+  iv             String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([type])
+}
+
+// ============================================================================
+// Webhook
+// ============================================================================
+
+model Webhook {
+  id             String     @id @default(uuid()) @db.Uuid
+  workflowId     String     @db.Uuid
+  path           String     @unique
+  method         HttpMethod @default(POST)
+  isActive       Boolean    @default(true)
+  authentication Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([path])
+  @@index([workflowId])
+  @@index([isActive])
+}
+
+// ============================================================================
+// AuditLog
+// ============================================================================
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String?  @db.Uuid
+  action         String
+  resource       String
+  resourceId     String?
+  details        Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// EnvironmentVariable
+// ============================================================================
+
+model EnvironmentVariable {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  key            String
+  encryptedValue String
+  environment    Environment @default(DEVELOPMENT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key, environment])
+  @@index([organizationId])
+  @@index([environment])
+}
+
+// ============================================================================
+// Plugin
+// ============================================================================
+
+model Plugin {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String   @unique
+  version        String
+  description    String?
+  author         String?
+  icon           String?
+  category       String?
+  isEnabled      Boolean  @default(true)
+  config         Json     @default("{}")
+  organizationId String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([slug])
+  @@index([organizationId])
+  @@index([category])
+  @@index([isEnabled])
+}

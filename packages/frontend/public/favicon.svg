@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#grad)" />
+  <!-- Flow nodes -->
+  <circle cx="20" cy="20" r="5" fill="white" opacity="0.9" />
+  <circle cx="44" cy="20" r="5" fill="white" opacity="0.9" />
+  <circle cx="32" cy="44" r="5" fill="white" opacity="0.9" />
+  <!-- Connection lines -->
+  <path d="M25 20 L39 20" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+  <path d="M22 25 L30 39" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+  <path d="M42 25 L34 39" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+  <!-- Arrow indicators -->
+  <path d="M36 20 L39 18 L39 22 Z" fill="white" opacity="0.7" />
+  <path d="M28 36 L30 39 L26 38 Z" fill="white" opacity="0.7" />
+  <path d="M36 36 L34 39 L38 38 Z" fill="white" opacity="0.7" />
+</svg>
